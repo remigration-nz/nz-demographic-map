@@ -41,6 +41,7 @@ const QUERY_CONCURRENCY = 8
 const QUERY_RADIUS_METRES = 10000
 const MAX_CANDIDATES_PER_AREA = 12
 const SOURCE_CACHE_DIR = process.env.DATAFINDER_CACHE_DIR || '.cache/datafinder-boundaries'
+const GENERATED_TILE_CACHE_DIR = process.env.GENERATED_TILE_CACHE_DIR || '.cache/generated-tiles'
 const SIMPLIFY_TOLERANCE = {
   rc: 0.002,
   ta: 0.001,
@@ -498,50 +499,6 @@ function buildSegmentStats(features) {
   return { segmentCounts, sharedVertexDegrees }
 }
 
-function collectSegments(features) {
-  const segmentMap = new Map()
-  for (const feature of features) {
-    forEachRing(feature.geometry, ring => {
-      for (let index = 1; index < ring.length; index++) {
-        const start = ring[index - 1]
-        const end = ring[index]
-        if (pointKey(start) === pointKey(end)) continue
-
-        const key = segmentKey(start, end)
-        if (!segmentMap.has(key)) {
-          segmentMap.set(key, { start, end })
-        }
-      }
-    })
-  }
-
-  return [...segmentMap.values()]
-}
-
-function collectOuterSegments(features) {
-  const segmentCounts = new Map()
-  const segmentsByKey = new Map()
-  for (const feature of features) {
-    forEachRing(feature.geometry, ring => {
-      for (let index = 1; index < ring.length; index++) {
-        const start = ring[index - 1]
-        const end = ring[index]
-        if (pointKey(start) === pointKey(end)) continue
-
-        const key = segmentKey(start, end)
-        segmentCounts.set(key, (segmentCounts.get(key) || 0) + 1)
-        if (!segmentsByKey.has(key)) {
-          segmentsByKey.set(key, { start, end })
-        }
-      }
-    })
-  }
-
-  return [...segmentsByKey.entries()]
-    .filter(([key]) => segmentCounts.get(key) === 1)
-    .map(([, segment]) => segment)
-}
-
 function forEachRing(geometry, callback) {
   if (geometry.type === 'Polygon') {
     for (const ring of geometry.coordinates) callback(ring)
@@ -587,61 +544,6 @@ function fillFeature(tier, feature, segmentStats, sharedChainCache) {
   }
 }
 
-function stitchSegments(segments) {
-  const adjacency = new Map()
-  const used = new Set()
-
-  segments.forEach((segment, index) => {
-    for (const point of [segment.start, segment.end]) {
-      const key = pointKey(point)
-      const connected = adjacency.get(key) || []
-      connected.push(index)
-      adjacency.set(key, connected)
-    }
-  })
-
-  function extend(line, fromStart) {
-    while (true) {
-      const point = fromStart ? line[0] : line[line.length - 1]
-      const connected = adjacency.get(pointKey(point)) || []
-      const nextIndex = connected.find(index => !used.has(index))
-      if (nextIndex === undefined) return
-
-      used.add(nextIndex)
-      const segment = segments[nextIndex]
-      const other =
-        pointKey(segment.start) === pointKey(point) ? segment.end : segment.start
-      if (fromStart) line.unshift(other)
-      else line.push(other)
-    }
-  }
-
-  const lines = []
-  for (let index = 0; index < segments.length; index++) {
-    if (used.has(index)) continue
-    used.add(index)
-
-    const segment = segments[index]
-    const line = [segment.start, segment.end]
-    extend(line, false)
-    extend(line, true)
-    if (line.length > 1) lines.push(line)
-  }
-
-  return lines
-}
-
-function lineFeature(coordinates) {
-  return {
-    type: 'Feature',
-    properties: {},
-    geometry: {
-      type: 'LineString',
-      coordinates,
-    },
-  }
-}
-
 function nationalFillFeature(features) {
   const polygons = []
   for (const feature of features) {
@@ -665,10 +567,7 @@ function nationalFillFeature(features) {
 }
 
 async function writeNationalGeometry(features) {
-  const fillOutputPath = 'public/tiles/national-fills.geojson'
-  const borderOutputPath = 'public/tiles/national-borders.geojson'
-  const outerSegments = collectOuterSegments(features)
-  const lines = stitchSegments(outerSegments)
+  const fillOutputPath = `${GENERATED_TILE_CACHE_DIR}/national-fills.geojson`
 
   await fs.writeFile(
     fillOutputPath,
@@ -677,22 +576,11 @@ async function writeNationalGeometry(features) {
       features: [nationalFillFeature(features)],
     })}\n`,
   )
-  await fs.writeFile(
-    borderOutputPath,
-    `${JSON.stringify({
-      type: 'FeatureCollection',
-      features: lines.map(lineFeature),
-    })}\n`,
-  )
-
-  console.log(
-    `${borderOutputPath}: ${lines.length.toLocaleString()} outer lines from ` +
-      `${outerSegments.length.toLocaleString()} outer segments`,
-  )
+  console.log(`${fillOutputPath}: 1 national polygon`)
 }
 
 async function generateBorders(tier) {
-  const outputPath = `public/tiles/${tier}-borders.geojson`
+  await fs.mkdir(GENERATED_TILE_CACHE_DIR, { recursive: true })
   const candidatesByName = await collectCandidatePoints(tier)
   console.log(`${tier}: found ${candidatesByName.size.toLocaleString()} areas in PMTiles`)
 
@@ -702,20 +590,9 @@ async function generateBorders(tier) {
   const fillFeatures = sourceFeatures.map(feature =>
     fillFeature(tier, feature, segmentStats, sharedChainCache),
   )
-  const segments = collectSegments(fillFeatures)
-  const lines = stitchSegments(segments)
-  const collection = {
-    type: 'FeatureCollection',
-    features: lines.map(lineFeature),
-  }
-
-  await fs.writeFile(outputPath, `${JSON.stringify(collection)}\n`)
-  console.log(
-    `${outputPath}: ${lines.length.toLocaleString()} lines from ${segments.length.toLocaleString()} unique segments`,
-  )
 
   if (FILL_TIERS.has(tier)) {
-    const fillOutputPath = `public/tiles/${tier}-fills.geojson`
+    const fillOutputPath = `${GENERATED_TILE_CACHE_DIR}/${tier}-fills.geojson`
     const fillCollection = {
       type: 'FeatureCollection',
       features: fillFeatures,

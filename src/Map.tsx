@@ -1,4 +1,5 @@
 import maplibregl from 'maplibre-gl'
+import { Protocol } from 'pmtiles'
 import { useEffect, useRef, useState } from 'react'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import AreaSearch, { type SearchHit } from './AreaSearch'
@@ -8,13 +9,12 @@ import { useTheme } from './contexts/ThemeContext'
 import { europeanFillColor, getEuropeanData } from './domain/geo'
 import {
   type GeographyTier,
-  NATIONAL_KEY,
   SA2_ZOOM_THRESHOLD,
   TA_ZOOM_THRESHOLD,
   TILE_SOURCES,
 } from './domain/types'
 import InfoPanel from './InfoPanel'
-import { assetUrl } from './lib/paths'
+import { pmtilesUrl } from './lib/paths'
 import MapLegend from './MapLegend'
 
 const NZ_CENTER: [number, number] = [174.7762, -41.2865]
@@ -29,13 +29,23 @@ const NZ_NAVIGATION_BOUNDS: [[number, number], [number, number]] = [
 ]
 const NZ_FIT_PADDING = 32
 const GEOGRAPHY_TIERS: GeographyTier[] = ['rc', 'ta', 'sa2']
-const BORDER_COLOR = '#2f2f2f'
-const SELECTED_DOT_SPACING = 7
-const SELECTED_DOT_RADIUS = 1
 const MAP_BACKGROUND = {
   light: '#eef2f1',
   dark: '#101820',
 } as const
+const pmtilesProtocol = new Protocol()
+let pmtilesProtocolRegistered = false
+
+function ensurePmtilesProtocol() {
+  if (pmtilesProtocolRegistered) return
+  try {
+    maplibregl.addProtocol('pmtiles', pmtilesProtocol.tile)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (!message.toLowerCase().includes('already')) throw error
+  }
+  pmtilesProtocolRegistered = true
+}
 
 function hasFineHoverPointer() {
   return (
@@ -43,33 +53,109 @@ function hasFineHoverPointer() {
   )
 }
 
-function ensureBorderLayer(map: maplibregl.Map, tier: GeographyTier) {
-  const sourceId = `${tier}-borders`
-  const layerId = `${tier}-border`
-  if (!map.getSource(sourceId)) {
-    map.addSource(sourceId, {
-      type: 'geojson',
-      data: assetUrl(`tiles/${tier}-borders.geojson`),
-      buffer: 512,
-      tolerance: 0,
+function ensureFillLayer(map: maplibregl.Map, tier: GeographyTier) {
+  if (!map.getSource(tier)) {
+    map.addSource(tier, {
+      type: 'vector',
+      url: `pmtiles://${pmtilesUrl(`tiles/${tier}.pmtiles`)}`,
+      promoteId: TILE_SOURCES[tier].nameProp,
     })
   }
+  if (!map.getLayer(`${tier}-fill`)) {
+    map.addLayer({
+      id: `${tier}-fill`,
+      type: 'fill',
+      source: tier,
+      'source-layer': TILE_SOURCES[tier].layer,
+      paint: {
+        'fill-color': hoverColorExpression('#888'),
+        'fill-antialias': false,
+      },
+    })
+  }
+}
+
+function ensureBorderLayer(map: maplibregl.Map, tier: GeographyTier) {
+  const layerId = `${tier}-border`
   if (!map.getLayer(layerId)) {
     map.addLayer({
       id: layerId,
       type: 'line',
-      source: sourceId,
+      source: tier,
+      'source-layer': TILE_SOURCES[tier].layer,
       paint: {
-        'line-color': BORDER_COLOR,
+        'line-color': borderColorForFill('#888'),
         'line-width': borderLineWidth(tier),
       },
       layout: {
-        visibility: 'none',
         'line-cap': 'round',
         'line-join': 'round',
       },
     })
   }
+}
+
+function ensureTierLayers(map: maplibregl.Map, tier: GeographyTier) {
+  ensureFillLayer(map, tier)
+  ensureBorderLayer(map, tier)
+}
+
+function ensureNationalLayers(map: maplibregl.Map) {
+  if (!map.getSource('national')) {
+    map.addSource('national', {
+      type: 'vector',
+      url: `pmtiles://${pmtilesUrl('tiles/national.pmtiles')}`,
+      promoteId: 'name',
+    })
+  }
+  if (!map.getLayer('national-fill')) {
+    map.addLayer({
+      id: 'national-fill',
+      type: 'fill',
+      source: 'national',
+      'source-layer': 'national',
+      paint: {
+        'fill-color': hoverColorExpression('#888'),
+        'fill-antialias': false,
+      },
+    })
+  }
+  if (!map.getLayer('national-border')) {
+    map.addLayer({
+      id: 'national-border',
+      type: 'line',
+      source: 'national',
+      'source-layer': 'national',
+      paint: {
+        'line-color': borderColorForFill('#888'),
+        'line-width': ['interpolate', ['linear'], ['zoom'], 2, 0.5, 6, 0.9, 9, 1.2],
+      },
+      layout: {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+    })
+  }
+}
+
+function removeLayerIfPresent(map: maplibregl.Map, layerId: string) {
+  if (map.getLayer(layerId)) map.removeLayer(layerId)
+}
+
+function removeSourceIfPresent(map: maplibregl.Map, sourceId: string) {
+  if (map.getSource(sourceId)) map.removeSource(sourceId)
+}
+
+function removeTierLayers(map: maplibregl.Map, tier: GeographyTier) {
+  removeLayerIfPresent(map, `${tier}-border`)
+  removeLayerIfPresent(map, `${tier}-fill`)
+  removeSourceIfPresent(map, tier)
+}
+
+function removeNationalLayers(map: maplibregl.Map) {
+  removeLayerIfPresent(map, 'national-border')
+  removeLayerIfPresent(map, 'national-fill')
+  removeSourceIfPresent(map, 'national')
 }
 
 function fitNzBounds(map: maplibregl.Map, duration = 0) {
@@ -93,18 +179,40 @@ function colorExpression(
   metrics: Record<string, number>,
   nameProp: string,
 ): maplibregl.ExpressionSpecification {
+  return metricColorExpression(metrics, nameProp, (color) => color, lightenColor)
+}
+
+function borderColorExpression(
+  metrics: Record<string, number>,
+  nameProp: string,
+): maplibregl.ExpressionSpecification {
+  return metricColorExpression(metrics, nameProp, darkenColor, (color) =>
+    darkenColor(lightenColor(color)),
+  )
+}
+
+function borderColorForFill(color: string): maplibregl.ExpressionSpecification {
+  return hoverColorExpression(darkenColor(color), darkenColor(lightenColor(color)))
+}
+
+function metricColorExpression(
+  metrics: Record<string, number>,
+  nameProp: string,
+  baseColor: (color: string) => string,
+  hoverColor: (color: string) => string,
+): maplibregl.ExpressionSpecification {
   const entries = Object.entries(metrics)
-  if (entries.length === 0) return hoverColorExpression('#888')
+  if (entries.length === 0) return hoverColorExpression(baseColor('#888'), hoverColor('#888'))
 
   const matchExpr: unknown[] = ['match', ['get', nameProp]]
   const hoverMatchExpr: unknown[] = ['match', ['get', nameProp]]
   for (const [name, pct] of entries) {
     const color = europeanFillColor(pct)
-    matchExpr.push(name, color)
-    hoverMatchExpr.push(name, lightenColor(color))
+    matchExpr.push(name, baseColor(color))
+    hoverMatchExpr.push(name, hoverColor(color))
   }
-  matchExpr.push('#888')
-  hoverMatchExpr.push(lightenColor('#888'))
+  matchExpr.push(baseColor('#888'))
+  hoverMatchExpr.push(hoverColor('#888'))
   return hoverColorExpression(
     matchExpr as maplibregl.ExpressionSpecification,
     hoverMatchExpr as maplibregl.ExpressionSpecification,
@@ -139,6 +247,20 @@ function lightenChannel(value: number, amount: number) {
   return Math.round(value + (255 - value) * amount)
 }
 
+function darkenColor(color: string, amount = 0.24): string {
+  const channels = parseColor(color)
+  if (!channels) return color
+  const [red, green, blue] = channels
+  return `rgb(${darkenChannel(red, amount)}, ${darkenChannel(green, amount)}, ${darkenChannel(
+    blue,
+    amount,
+  )})`
+}
+
+function darkenChannel(value: number, amount: number) {
+  return Math.round(value * (1 - amount))
+}
+
 function parseColor(color: string): [number, number, number] | null {
   const hex = color.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)
   if (hex) {
@@ -163,138 +285,13 @@ function parseColor(color: string): [number, number, number] | null {
 
 interface HoveredFeature {
   source: string
+  sourceLayer?: string
   id: string | number
-}
-
-type Position = [number, number]
-type PolygonCoordinates = Position[][]
-type MultiPolygonCoordinates = PolygonCoordinates[]
-
-interface BoundaryFeature {
-  type: 'Feature'
-  properties: Record<string, unknown>
-  geometry: {
-    type: 'Polygon' | 'MultiPolygon'
-    coordinates: PolygonCoordinates | MultiPolygonCoordinates
-  }
-}
-
-interface BoundaryFeatureCollection {
-  type: 'FeatureCollection'
-  features: BoundaryFeature[]
-}
-
-const boundaryCache = new Map<GeographyTier, Promise<BoundaryFeatureCollection>>()
-
-function loadBoundaryCollection(tier: GeographyTier) {
-  const cached = boundaryCache.get(tier)
-  if (cached) return cached
-
-  const promise = fetch(assetUrl(`tiles/${tier}-fills.geojson`)).then(async (response) => {
-    if (!response.ok) {
-      throw new Error(`Failed to load selected geometry for ${tier}: ${response.status}`)
-    }
-    return (await response.json()) as BoundaryFeatureCollection
-  })
-  boundaryCache.set(tier, promise)
-  return promise
-}
-
-async function loadSelectedBoundaryFeature(tier: GeographyTier, name: string) {
-  const collection = await loadBoundaryCollection(tier)
-  const nameProp = TILE_SOURCES[tier].nameProp
-  return collection.features.find((feature) => feature.properties?.[nameProp] === name) ?? null
-}
-
-function drawSelectedHatch(
-  map: maplibregl.Map,
-  canvas: HTMLCanvasElement,
-  feature: BoundaryFeature | null,
-) {
-  const mapCanvas = map.getCanvas()
-  const width = mapCanvas.clientWidth
-  const height = mapCanvas.clientHeight
-  const pixelRatio = window.devicePixelRatio || 1
-
-  canvas.style.width = `${width}px`
-  canvas.style.height = `${height}px`
-  canvas.width = Math.max(1, Math.round(width * pixelRatio))
-  canvas.height = Math.max(1, Math.round(height * pixelRatio))
-
-  const context = canvas.getContext('2d')
-  if (!context) return
-
-  context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
-  context.clearRect(0, 0, width, height)
-  if (!feature) return
-
-  context.save()
-  context.beginPath()
-  forEachPolygon(feature, (polygon) => {
-    for (const ring of polygon) {
-      ring.forEach((coordinate, index) => {
-        const point = map.project(normalizeMapCoordinate(coordinate))
-        if (index === 0) context.moveTo(point.x, point.y)
-        else context.lineTo(point.x, point.y)
-      })
-      context.closePath()
-    }
-  })
-  context.clip('evenodd')
-
-  context.fillStyle = BORDER_COLOR
-  const centerX = width / 2
-  const centerY = height / 2
-  const angle = (-map.getBearing() * Math.PI) / 180
-  const anchor = map.project([180, 0])
-  const localAnchor = rotatePoint(anchor.x - centerX, anchor.y - centerY, -angle)
-  const extent = Math.hypot(width, height)
-  const startX = gridStart(localAnchor.x, -extent, SELECTED_DOT_SPACING)
-  const startY = gridStart(localAnchor.y, -extent, SELECTED_DOT_SPACING)
-
-  context.translate(centerX, centerY)
-  context.rotate(angle)
-
-  for (let y = startY; y < extent; y += SELECTED_DOT_SPACING) {
-    for (let x = startX; x < extent; x += SELECTED_DOT_SPACING) {
-      context.beginPath()
-      context.arc(x, y, SELECTED_DOT_RADIUS, 0, Math.PI * 2)
-      context.fill()
-    }
-  }
-  context.restore()
-}
-
-function rotatePoint(x: number, y: number, angle: number) {
-  const cos = Math.cos(angle)
-  const sin = Math.sin(angle)
-  return {
-    x: x * cos - y * sin,
-    y: x * sin + y * cos,
-  }
-}
-
-function gridStart(anchor: number, min: number, spacing: number) {
-  return anchor + Math.floor((min - anchor) / spacing) * spacing
-}
-
-function forEachPolygon(feature: BoundaryFeature, callback: (polygon: PolygonCoordinates) => void) {
-  if (feature.geometry.type === 'Polygon') {
-    callback(feature.geometry.coordinates as PolygonCoordinates)
-    return
-  }
-
-  for (const polygon of feature.geometry.coordinates as MultiPolygonCoordinates) {
-    callback(polygon)
-  }
-}
-
-function normalizeMapCoordinate([lng, lat]: Position): maplibregl.LngLatLike {
-  return [lng < 0 ? lng + 360 : lng, lat]
 }
 
 function clearHoveredFeature(map: maplibregl.Map, hoveredFeature: HoveredFeature | null) {
   if (!hoveredFeature) return
+  if (!map.getSource(hoveredFeature.source)) return
   map.setFeatureState(hoveredFeature, { hover: false })
 }
 
@@ -323,9 +320,22 @@ function activeGeographyTier(
   return null
 }
 
+function tierFromFillLayer(layerId: string): GeographyTier | 'national' | null {
+  if (layerId === 'national-fill') return 'national'
+  if (layerId === 'rc-fill') return 'rc'
+  if (layerId === 'ta-fill') return 'ta'
+  if (layerId === 'sa2-fill') return 'sa2'
+  return null
+}
+
+function loadedFillLayers(map: maplibregl.Map) {
+  return ['national-fill', 'rc-fill', 'ta-fill', 'sa2-fill'].filter((layerId) =>
+    map.getLayer(layerId),
+  )
+}
+
 function MapView() {
   const {
-    selectedArea,
     setSelectedArea,
     selectedYear,
     setSelectedYear,
@@ -344,11 +354,9 @@ function MapView() {
   const { theme } = useTheme()
 
   const containerRef = useRef<HTMLDivElement>(null)
-  const selectedCanvasRef = useRef<HTMLCanvasElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const [zoomLevel, setZoomLevel] = useState(6)
   const [mapReady, setMapReady] = useState(false)
-  const [selectedFeature, setSelectedFeature] = useState<BoundaryFeature | null>(null)
   const [showRegionalCouncils, setShowRegionalCouncils] = useState(true)
   const [showTerritorialAuthorities, setShowTerritorialAuthorities] = useState(true)
   const [showSA2, setShowSA2] = useState(true)
@@ -362,45 +370,17 @@ function MapView() {
   // Init map
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
+    ensurePmtilesProtocol()
 
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: {
         version: 8,
         sources: {
-          national: {
-            type: 'geojson',
-            data: assetUrl('tiles/national-fills.geojson'),
-            buffer: 512,
-            tolerance: 0,
-            generateId: true,
-          },
-          'national-borders': {
-            type: 'geojson',
-            data: assetUrl('tiles/national-borders.geojson'),
-            buffer: 512,
-            tolerance: 0,
-          },
           rc: {
-            type: 'geojson',
-            data: assetUrl('tiles/rc-fills.geojson'),
-            buffer: 512,
-            tolerance: 0,
-            generateId: true,
-          },
-          ta: {
-            type: 'geojson',
-            data: assetUrl('tiles/ta-fills.geojson'),
-            buffer: 512,
-            tolerance: 0,
-            generateId: true,
-          },
-          sa2: {
-            type: 'geojson',
-            data: assetUrl('tiles/sa2-fills.geojson'),
-            buffer: 512,
-            tolerance: 0,
-            generateId: true,
+            type: 'vector',
+            url: `pmtiles://${pmtilesUrl('tiles/rc.pmtiles')}`,
+            promoteId: TILE_SOURCES.rc.nameProp,
           },
         },
         layers: [
@@ -412,57 +392,14 @@ function MapView() {
             },
           },
           {
-            id: 'national-fill',
-            type: 'fill',
-            source: 'national',
-            paint: {
-              'fill-color': hoverColorExpression('#888'),
-              'fill-antialias': false,
-            },
-            layout: { visibility: 'none' },
-          },
-          {
-            id: 'national-border',
-            type: 'line',
-            source: 'national-borders',
-            paint: {
-              'line-color': BORDER_COLOR,
-              'line-width': ['interpolate', ['linear'], ['zoom'], 2, 0.5, 6, 0.9, 9, 1.2],
-            },
-            layout: {
-              visibility: 'none',
-              'line-cap': 'round',
-              'line-join': 'round',
-            },
-          },
-          {
             id: 'rc-fill',
             type: 'fill',
             source: 'rc',
+            'source-layer': TILE_SOURCES.rc.layer,
             paint: {
               'fill-color': hoverColorExpression('#888'),
               'fill-antialias': false,
             },
-          },
-          {
-            id: 'ta-fill',
-            type: 'fill',
-            source: 'ta',
-            paint: {
-              'fill-color': hoverColorExpression('#888'),
-              'fill-antialias': false,
-            },
-            layout: { visibility: 'none' },
-          },
-          {
-            id: 'sa2-fill',
-            type: 'fill',
-            source: 'sa2',
-            paint: {
-              'fill-color': hoverColorExpression('#888'),
-              'fill-antialias': false,
-            },
-            layout: { visibility: 'none' },
           },
         ],
       },
@@ -499,74 +436,94 @@ function MapView() {
     const clearHoverOnTouch = (_event: TouchEvent) => {
       leaveHandler()
     }
-    const clickHandler = (tier: GeographyTier) => (e: maplibregl.MapMouseEvent) => {
-      const nameProp = TILE_SOURCES[tier].nameProp
+    const clickHandler = (e: maplibregl.MapMouseEvent) => {
+      const layers = loadedFillLayers(map)
+      if (layers.length === 0) return
       const features = map.queryRenderedFeatures(e.point, {
-        layers: [`${tier}-fill`],
+        layers,
       })
-      const name = features[0]?.properties?.[nameProp]
+      const feature = features[0]
+      const tier = tierFromFillLayer(feature?.layer.id ?? '')
+      if (tier === 'national') {
+        setSelectedArea(nationalKey)
+        leaveHandler()
+        return
+      }
+      if (!tier) return
+
+      const nameProp = TILE_SOURCES[tier].nameProp
+      const name = feature?.properties?.[nameProp]
       if (typeof name === 'string' && name) {
         setSelectedArea(name)
       }
       leaveHandler()
     }
-    const hoverHandler =
-      (source: string, nameProp: string) => (e: maplibregl.MapLayerMouseEvent) => {
-        if (!hasFineHoverPointer()) {
-          leaveHandler()
-          return
-        }
-
-        const feature = e.features?.[0]
-        const name = feature?.properties?.[nameProp]
-        if (typeof name !== 'string' || !name) return
-        if (feature.id === undefined || feature.id === null) {
-          hoverPopup.setLngLat(e.lngLat).setText(name).addTo(map)
-          return
-        }
-
-        const nextHoveredFeature = { source, id: feature.id }
-        if (
-          hoveredFeature?.source === nextHoveredFeature.source &&
-          hoveredFeature.id === nextHoveredFeature.id
-        ) {
-          return
-        }
-
-        clearHoveredFeature(map, hoveredFeature)
-        hoveredFeature = nextHoveredFeature
-        map.setFeatureState(hoveredFeature, { hover: true })
-        hoverPopup.setLngLat(e.lngLat).setText(name).addTo(map)
+    const hoverHandler = (e: maplibregl.MapMouseEvent) => {
+      if (!hasFineHoverPointer()) {
+        leaveHandler()
+        return
       }
 
-    map.on('click', 'rc-fill', clickHandler('rc'))
-    map.on('click', 'ta-fill', clickHandler('ta'))
-    map.on('click', 'sa2-fill', clickHandler('sa2'))
-    map.on('click', 'national-fill', () => {
-      setSelectedArea(nationalKey)
-      leaveHandler()
-    })
+      const layers = loadedFillLayers(map)
+      if (layers.length === 0) {
+        leaveHandler()
+        return
+      }
 
-    map.on('mousemove', 'national-fill', hoverHandler('national', 'name'))
-    map.on('mousemove', 'rc-fill', hoverHandler('rc', TILE_SOURCES.rc.nameProp))
-    map.on('mousemove', 'ta-fill', hoverHandler('ta', TILE_SOURCES.ta.nameProp))
-    map.on('mousemove', 'sa2-fill', hoverHandler('sa2', TILE_SOURCES.sa2.nameProp))
+      const feature = map.queryRenderedFeatures(e.point, { layers })[0]
+      const tier = tierFromFillLayer(feature?.layer.id ?? '')
+      if (!feature || !tier) {
+        leaveHandler()
+        return
+      }
 
-    for (const layer of ['national-fill', 'rc-fill', 'ta-fill', 'sa2-fill']) {
-      map.on('mouseenter', layer, () => {
-        map.getCanvas().style.cursor = 'pointer'
-      })
-      map.on('mouseleave', layer, leaveHandler)
+      const nameProp = tier === 'national' ? 'name' : TILE_SOURCES[tier].nameProp
+      const name = feature.properties?.[nameProp]
+      if (typeof name !== 'string' || !name) {
+        leaveHandler()
+        return
+      }
+
+      map.getCanvas().style.cursor = 'pointer'
+      if (feature.id === undefined || feature.id === null) {
+        hoverPopup.setLngLat(e.lngLat).setText(name).addTo(map)
+        return
+      }
+
+      const nextHoveredFeature = {
+        source: tier,
+        sourceLayer: tier === 'national' ? 'national' : TILE_SOURCES[tier].layer,
+        id: feature.id,
+      }
+      if (
+        hoveredFeature?.source === nextHoveredFeature.source &&
+        hoveredFeature.sourceLayer === nextHoveredFeature.sourceLayer &&
+        hoveredFeature.id === nextHoveredFeature.id
+      ) {
+        return
+      }
+
+      clearHoveredFeature(map, hoveredFeature)
+      hoveredFeature = nextHoveredFeature
+      map.setFeatureState(hoveredFeature, { hover: true })
+      hoverPopup.setLngLat(e.lngLat).setText(name).addTo(map)
     }
 
+    map.on('click', clickHandler)
+    map.on('mousemove', hoverHandler)
+
     const canvas = map.getCanvas()
+    canvas.addEventListener('mouseleave', leaveHandler)
     canvas.addEventListener('touchend', clearHoverOnTouch)
     canvas.addEventListener('touchcancel', clearHoverOnTouch)
 
     mapRef.current = map
     return () => {
+      canvas.removeEventListener('mouseleave', leaveHandler)
       canvas.removeEventListener('touchend', clearHoverOnTouch)
       canvas.removeEventListener('touchcancel', clearHoverOnTouch)
+      map.off('click', clickHandler)
+      map.off('mousemove', hoverHandler)
       hoverPopup.remove()
       map.remove()
       mapRef.current = null
@@ -578,52 +535,53 @@ function MapView() {
     void ensureMetrics(activeTier ? [activeTier] : [])
   }, [activeTier, ensureMetrics])
 
-  useEffect(() => {
-    let cancelled = false
-    const isAreaSelection =
-      activeTier && selectedArea && selectedArea !== NATIONAL_KEY && selectedArea !== nationalKey
-
-    if (!isAreaSelection) {
-      setSelectedFeature(null)
-      return
-    }
-
-    loadSelectedBoundaryFeature(activeTier, selectedArea)
-      .then((feature) => {
-        if (!cancelled) setSelectedFeature(feature)
-      })
-      .catch((error) => {
-        console.error('Failed to load selected area geometry', error)
-        if (!cancelled) setSelectedFeature(null)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [activeTier, selectedArea, nationalKey])
-
-  // Layer visibility by zoom + toggles
+  // Keep only the visible geography PMTiles source loaded in MapLibre.
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
 
     const showNational = !showRegionalCouncils && !showTerritorialAuthorities && !showSA2
     const active = activeTier
+    const nationalMetric = getEuropeanData(
+      nationalDetail?.single ?? null,
+      selectedYear,
+      selectedAgeGroup,
+    )
+    const nationalFillColor = europeanFillColor(nationalMetric?.percentage)
 
-    if (active) ensureBorderLayer(map, active)
+    if (showNational) {
+      ensureNationalLayers(map)
+      map.setPaintProperty('national-fill', 'fill-color', hoverColorExpression(nationalFillColor))
+      map.setPaintProperty('national-border', 'line-color', borderColorForFill(nationalFillColor))
+    } else {
+      removeNationalLayers(map)
+    }
 
-    if (map.getLayer('national-fill')) {
-      map.setLayoutProperty('national-fill', 'visibility', showNational ? 'visible' : 'none')
-    }
-    if (map.getLayer('national-border')) {
-      map.setLayoutProperty('national-border', 'visibility', showNational ? 'visible' : 'none')
-    }
     for (const tier of GEOGRAPHY_TIERS) {
-      const vis = active === tier ? 'visible' : 'none'
-      if (map.getLayer(`${tier}-fill`)) map.setLayoutProperty(`${tier}-fill`, 'visibility', vis)
-      if (map.getLayer(`${tier}-border`)) map.setLayoutProperty(`${tier}-border`, 'visibility', vis)
+      if (active === tier) {
+        ensureTierLayers(map, tier)
+        const nameProp = TILE_SOURCES[tier].nameProp
+        map.setPaintProperty(`${tier}-fill`, 'fill-color', colorExpression(metrics, nameProp))
+        map.setPaintProperty(
+          `${tier}-border`,
+          'line-color',
+          borderColorExpression(metrics, nameProp),
+        )
+      } else {
+        removeTierLayers(map, tier)
+      }
     }
-  }, [activeTier, showRegionalCouncils, showTerritorialAuthorities, showSA2, mapReady])
+  }, [
+    activeTier,
+    metrics,
+    mapReady,
+    nationalDetail,
+    selectedAgeGroup,
+    selectedYear,
+    showRegionalCouncils,
+    showSA2,
+    showTerritorialAuthorities,
+  ])
 
   useEffect(() => {
     const map = mapRef.current
@@ -635,8 +593,6 @@ function MapView() {
       cancelAnimationFrame(frame)
       frame = requestAnimationFrame(() => {
         map.resize()
-        const canvas = selectedCanvasRef.current
-        if (canvas) drawSelectedHatch(map, canvas, selectedFeature)
       })
     }
 
@@ -650,55 +606,13 @@ function MapView() {
       observer.disconnect()
       window.removeEventListener('resize', resize)
     }
-  }, [mapReady, selectedFeature])
-
-  useEffect(() => {
-    const map = mapRef.current
-    const canvas = selectedCanvasRef.current
-    if (!map || !canvas || !mapReady) return
-
-    const redraw = () => drawSelectedHatch(map, canvas, selectedFeature)
-    redraw()
-
-    map.on('move', redraw)
-    map.on('resize', redraw)
-    return () => {
-      map.off('move', redraw)
-      map.off('resize', redraw)
-    }
-  }, [mapReady, selectedFeature])
+  }, [mapReady])
 
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady || !map.getLayer('background')) return
     map.setPaintProperty('background', 'background-color', MAP_BACKGROUND[theme])
   }, [theme, mapReady])
-
-  // Apply metrics to fill colors
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map || !mapReady) return
-
-    const nationalMetric = getEuropeanData(
-      nationalDetail?.single ?? null,
-      selectedYear,
-      selectedAgeGroup,
-    )
-    if (map.getLayer('national-fill')) {
-      map.setPaintProperty(
-        'national-fill',
-        'fill-color',
-        hoverColorExpression(europeanFillColor(nationalMetric?.percentage)),
-      )
-    }
-
-    for (const tier of GEOGRAPHY_TIERS) {
-      const layerId = `${tier}-fill`
-      if (!map.getLayer(layerId)) continue
-      const nameProp = TILE_SOURCES[tier].nameProp
-      map.setPaintProperty(layerId, 'fill-color', colorExpression(metrics, nameProp))
-    }
-  }, [metrics, mapReady, nationalDetail, selectedYear, selectedAgeGroup])
 
   const flyToSearch = (hit: SearchHit, zoom: number) => {
     setSelectedArea(hit.name)
@@ -716,17 +630,6 @@ function MapView() {
     <>
       <div style={{ position: 'absolute', inset: 0 }}>
         <div ref={containerRef} style={{ height: '100%', width: '100%' }} />
-        <canvas
-          ref={selectedCanvasRef}
-          style={{
-            position: 'absolute',
-            inset: 0,
-            width: '100%',
-            height: '100%',
-            pointerEvents: 'none',
-            zIndex: 1,
-          }}
-        />
       </div>
       <AreaSearch onSelect={flyToSearch} disabled={loading} />
       <InfoPanel

@@ -18,7 +18,8 @@
     "data:fetch": "node --env-file=.env scripts/fetch-data.mjs",
     "data:fetch-all": "node --env-file=.env scripts/fetch-all-data.mjs",
     "data:fetch-level3": "node --env-file=.env scripts/fetch-level3-data.mjs",
-    "data:borders": "node scripts/generate-border-geojson.mjs"
+    "data:borders": "node scripts/generate-border-geojson.mjs",
+    "data:pmtiles": "node scripts/generate-fill-pmtiles.mjs"
   },
   "dependencies": {
     "maplibre-gl": "^5.24.0",
