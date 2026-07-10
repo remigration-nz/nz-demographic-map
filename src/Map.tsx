@@ -410,6 +410,7 @@ function MapView() {
   const nameIndexRef = useRef(nameIndex)
   const selectedYearRef = useRef(selectedYear)
   const selectedAgeGroupRef = useRef(selectedAgeGroup)
+  const ensureMetricsRef = useRef(ensureMetrics)
   const appliedAreaSlugRef = useRef<string | null>(null)
   const [zoomLevel, setZoomLevel] = useState(6)
   const [mapReady, setMapReady] = useState(false)
@@ -434,6 +435,10 @@ function MapView() {
   useEffect(() => {
     selectedAgeGroupRef.current = selectedAgeGroup
   }, [selectedAgeGroup])
+
+  useEffect(() => {
+    ensureMetricsRef.current = ensureMetrics
+  }, [ensureMetrics])
 
   useEffect(() => {
     if (!mapReady || nameIndex.size === 0) return
@@ -469,7 +474,7 @@ function MapView() {
       if (!entry || !isGeographyTier(entry.tier)) return
 
       appliedAreaSlugRef.current = slug
-      void ensureMetrics([entry.tier], nextYear, nextAgeGroup)
+      void ensureMetricsRef.current([entry.tier], nextYear, nextAgeGroup)
       setSelectedArea(entry.name)
       if (map && entry.center) {
         const zoom = zoomForTier(entry.tier)
@@ -489,7 +494,6 @@ function MapView() {
   }, [
     availableAgeGroups,
     availableYears,
-    ensureMetrics,
     mapReady,
     nameIndex,
     nationalKey,
@@ -497,6 +501,17 @@ function MapView() {
     setSelectedArea,
     setSelectedYear,
   ])
+
+  useEffect(() => {
+    const slug = getUrlSearchParams().get(AREA_QUERY_PARAM)
+    if (!slug) return
+    setShareUrlParams({
+      slug,
+      year: selectedYear,
+      ageGroup: selectedAgeGroup,
+      mode: 'replace',
+    })
+  }, [selectedAgeGroup, selectedYear])
 
   // Init map
   useEffect(() => {
