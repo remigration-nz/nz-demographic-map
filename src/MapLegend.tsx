@@ -19,7 +19,7 @@ function MapLegend() {
       </div>
       <div className="map-legend-labels">
         {LABELS.map((pct) => (
-          <span key={pct} className="map-legend-label">
+          <span key={pct} className="map-legend-label" style={{ left: `${pct}%` }}>
             {pct}
           </span>
         ))}
