@@ -34,7 +34,7 @@ interface DataContextType {
   loading: boolean
   detailLoading: boolean
   error: string | null
-  ensureMetrics: (tiers: GeographyTier[]) => Promise<void>
+  ensureMetrics: (tiers: GeographyTier[], year?: string, ageGroup?: AgeGroup) => Promise<void>
   nationalKey: string
   nationalDetail: AreaDetail | null
   manifest: DataManifest | null
@@ -73,30 +73,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [activeMetricTiers, setActiveMetricTiers] = useState<GeographyTier[]>(['rc'])
 
   const ensureMetrics = useCallback(
-    async (tiers: GeographyTier[]) => {
+    async (tiers: GeographyTier[], year = selectedYear, ageGroup = selectedAgeGroup) => {
       setActiveMetricTiers(tiers)
-      if (!selectedYear) return
+      if (!year) return
 
       const missing = tiers.filter(
-        (tier) => !metricsLoadedRef.current.has(metricsKey(tier, selectedYear, selectedAgeGroup)),
+        (tier) => !metricsLoadedRef.current.has(metricsKey(tier, year, ageGroup)),
       )
       if (missing.length === 0) return
 
       const results = await Promise.all(
         missing.map(async (tier) => {
-          const data = await loadMetrics(tier, selectedYear, selectedAgeGroup)
+          const data = await loadMetrics(tier, year, ageGroup)
           return { tier, data }
         }),
       )
 
       for (const r of results) {
-        metricsLoadedRef.current.add(metricsKey(r.tier, selectedYear, selectedAgeGroup))
+        metricsLoadedRef.current.add(metricsKey(r.tier, year, ageGroup))
       }
 
       setMetricsByKey((prev) => {
         const next = { ...prev }
         for (const r of results) {
-          next[metricsKey(r.tier, selectedYear, selectedAgeGroup)] = r.data
+          next[metricsKey(r.tier, year, ageGroup)] = r.data
         }
         return next
       })

@@ -10,5 +10,12 @@ export function assetUrl(path: string): string {
 
 /** Absolute URL for PMTiles protocol (needs full origin + base). */
 export function pmtilesUrl(path: string): string {
-  return new URL(path.replace(/^\//, ''), PMTILES_BASE_URL).href
+  const clean = path.replace(/^\//, '')
+  if (/^https?:\/\//i.test(PMTILES_BASE_URL)) {
+    return new URL(clean, PMTILES_BASE_URL).href
+  }
+
+  const localBase = PMTILES_BASE_URL.startsWith('/') ? PMTILES_BASE_URL : `/${PMTILES_BASE_URL}`
+  if (typeof window === 'undefined') return `${localBase}${clean}`
+  return new URL(`${localBase}${clean}`, window.location.origin).href
 }

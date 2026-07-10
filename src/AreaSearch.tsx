@@ -1,6 +1,6 @@
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { normalizeName } from './domain/geo'
-import type { GeographyTier } from './domain/types'
+import { type GeographyTier, SA2_ZOOM_THRESHOLD, TA_ZOOM_THRESHOLD } from './domain/types'
 import { assetUrl } from './lib/paths'
 
 export interface SearchHit {
@@ -24,9 +24,9 @@ const TIER_LABEL: Record<string, string> = {
 }
 
 const TIER_ZOOM: Record<GeographyTier, number> = {
-  rc: 7,
-  ta: 9,
-  sa2: 12,
+  rc: Math.max(5, TA_ZOOM_THRESHOLD - 1),
+  ta: (TA_ZOOM_THRESHOLD + SA2_ZOOM_THRESHOLD) / 2,
+  sa2: SA2_ZOOM_THRESHOLD + 2,
 }
 
 interface AreaSearchProps {

@@ -4,8 +4,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:local-tiles": "VITE_LOCAL_PMTILES=true VITE_PMTILES_BASE_URL=/__local_pmtiles__/ vite",
     "build": "tsc -b && vite build",
+    "build:local-tiles": "VITE_LOCAL_PMTILES=true VITE_PMTILES_BASE_URL=/__local_pmtiles__/ tsc -b && VITE_LOCAL_PMTILES=true VITE_PMTILES_BASE_URL=/__local_pmtiles__/ vite build",
     "preview": "vite preview",
+    "preview:local-tiles": "VITE_LOCAL_PMTILES=true VITE_PMTILES_BASE_URL=/__local_pmtiles__/ vite preview",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",

@@ -11,7 +11,9 @@ import {
 import { useData, useSelectedRegionData } from './contexts/DataContext'
 import { useTheme } from './contexts/ThemeContext'
 import { describeArc, processUnifiedData } from './domain/ethnicity'
+import { ageGroupSlug } from './domain/geo'
 import { AGE_GROUPS, CATEGORY_COLORS, type DisplayItem, LEVEL3_KEY_MAP } from './domain/types'
+import { resolveIndexEntry } from './services/dataLoader'
 
 interface PieSlice {
   name: string
@@ -40,8 +42,30 @@ interface PanelStyle extends CSSProperties {
 
 const MOBILE_PANEL_QUERY = '(max-width: 640px)'
 const PANEL_DRAG_THRESHOLD = 44
+const AREA_QUERY_PARAM = 'area'
+const YEAR_QUERY_PARAM = 'year'
+const AGE_QUERY_PARAM = 'age'
 const isMobilePanelViewport = () =>
   typeof window !== 'undefined' && window.matchMedia(MOBILE_PANEL_QUERY).matches
+
+function shareUrlForSlug(slug: string | null, year: string, ageGroup: string) {
+  if (!slug || typeof window === 'undefined') return ''
+  const url = new URL(window.location.href)
+  url.searchParams.set(AREA_QUERY_PARAM, slug)
+  url.searchParams.set(YEAR_QUERY_PARAM, year)
+  url.searchParams.set(AGE_QUERY_PARAM, ageGroupSlug(ageGroup))
+  return url.href
+}
+
+async function copyShareUrl(url: string) {
+  if (!url) return false
+  try {
+    await navigator.clipboard.writeText(url)
+    return true
+  } catch {
+    return false
+  }
+}
 
 function EthnicityPie({ items, isDark }: { items: DisplayItem[]; isDark: boolean }) {
   const slices = useMemo(() => {
@@ -162,11 +186,13 @@ function AgeBreakdown({
 function InfoPanel({ controls }: InfoPanelProps) {
   const { theme } = useTheme()
   const isDark = theme === 'dark'
-  const { selectedArea, selectedYear, selectedAgeGroup, selectedDetail, detailLoading } = useData()
+  const { selectedArea, selectedYear, selectedAgeGroup, selectedDetail, detailLoading, nameIndex } =
+    useData()
   const data = useSelectedRegionData()
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [collapsed, setCollapsed] = useState(() => isMobilePanelViewport())
   const [activeTab, setActiveTab] = useState<InfoPanelTab>('details')
+  const [shareCopied, setShareCopied] = useState(false)
   const previousSelectedAreaRef = useRef(selectedArea)
   const dragStateRef = useRef<PanelDragState | null>(null)
   const suppressClickRef = useRef(false)
@@ -178,6 +204,7 @@ function InfoPanel({ controls }: InfoPanelProps) {
     previousSelectedAreaRef.current = selectedArea
     setCollapsed(false)
     setActiveTab('details')
+    setShareCopied(false)
   }, [selectedArea])
 
   const toggleExpand = (name: string) => {
@@ -196,6 +223,9 @@ function InfoPanel({ controls }: InfoPanelProps) {
 
   const level3SelectedYearData =
     selectedDetail?.level3?.ethnicityData?.[selectedYear]?.[selectedAgeGroup]
+  const selectedIndexEntry = resolveIndexEntry(nameIndex, selectedArea)
+  const selectedSlug = selectedIndexEntry?.slug ?? null
+  const shareUrl = shareUrlForSlug(selectedSlug, selectedYear, selectedAgeGroup)
 
   const isMobilePanel = isMobilePanelViewport
 
@@ -211,6 +241,59 @@ function InfoPanel({ controls }: InfoPanelProps) {
     setActiveTab(tab)
     if (!mobile) setCollapsed(false)
   }
+
+  const shareSelectedArea = async () => {
+    if (!shareUrl) return
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: selectedArea,
+          url: shareUrl,
+        })
+        return
+      } catch (error) {
+        if ((error as DOMException).name === 'AbortError') return
+      }
+    }
+
+    const copied = await copyShareUrl(shareUrl)
+    setShareCopied(copied)
+  }
+
+  const heading = (
+    <>
+      <div className="info-title-row">
+        <h4>{selectedArea}</h4>
+      </div>
+      {shareUrl && (
+        <button
+          type="button"
+          className="info-share-button"
+          onClick={shareSelectedArea}
+          aria-label={`Share ${selectedArea}`}
+          title={shareCopied ? 'Link copied' : 'Copy share link'}
+        >
+          <svg
+            className="info-share-icon"
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="18" cy="5" r="3" />
+            <circle cx="6" cy="12" r="3" />
+            <circle cx="18" cy="19" r="3" />
+            <path d="M8.6 10.5 15.4 6.5" />
+            <path d="M8.6 13.5 15.4 17.5" />
+          </svg>
+          <span>{shareCopied ? 'Copied' : 'Share'}</span>
+        </button>
+      )}
+    </>
+  )
 
   const startPanelDrag = (event: PointerEvent<HTMLElement>) => {
     if (!isMobilePanel()) return
@@ -380,7 +463,7 @@ function InfoPanel({ controls }: InfoPanelProps) {
     return renderDrawer(
       <div className="info-heading">
         <span className="info-kicker">{selectedYear} Census</span>
-        <h4>{selectedArea}</h4>
+        {heading}
         <p className="info-subtitle">
           {detailLoading || !data
             ? 'Loading...'
@@ -407,7 +490,7 @@ function InfoPanel({ controls }: InfoPanelProps) {
     <>
       <div className="info-heading">
         <span className="info-kicker">{selectedYear} Census</span>
-        <h4>{selectedArea}</h4>
+        {heading}
         <span className="info-age-pill">{ageLabel}</span>
       </div>
       <p className="info-subtitle">Single/combination responses</p>

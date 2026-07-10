@@ -758,12 +758,48 @@ body {
   text-transform: uppercase;
 }
 
+.info-title-row {
+  padding-right: 86px;
+}
+
 .info-panel h4 {
   margin: 0;
-  padding-right: 86px;
   color: var(--text-primary);
   font-size: 20px;
   line-height: 1.18;
+}
+
+.info-share-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 26px;
+  margin-top: 7px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 16px;
+}
+
+.info-share-button:hover {
+  background: var(--button-hover);
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border-color));
+}
+
+.info-share-button:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.info-share-icon {
+  flex: 0 0 15px;
+  width: 15px;
+  height: 15px;
 }
 
 .info-subtitle {
