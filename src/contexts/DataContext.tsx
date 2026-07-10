@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { ageGroupSlug } from '../domain/geo'
 import {
   AGE_GROUPS,
   type AgeGroup,
@@ -44,9 +45,21 @@ interface DataContextType {
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined)
+const YEAR_QUERY_PARAM = 'year'
+const AGE_QUERY_PARAM = 'age'
 
 function metricsKey(tier: GeographyTier, year: string, age: string) {
   return `${tier}|${year}|${age}`
+}
+
+function initialSearchParams() {
+  if (typeof window === 'undefined') return new URLSearchParams()
+  return new URLSearchParams(window.location.search)
+}
+
+function ageGroupFromSlug(slug: string | null, availableAgeGroups: AgeGroup[]) {
+  if (!slug) return null
+  return availableAgeGroups.find((ageGroup) => ageGroupSlug(ageGroup) === slug) ?? null
 }
 
 export function useData() {
@@ -56,6 +69,9 @@ export function useData() {
 }
 
 export function DataProvider({ children }: { children: ReactNode }) {
+  const initialUrlYear = useMemo(() => initialSearchParams().get(YEAR_QUERY_PARAM), [])
+  const initialUrlAge = useMemo(() => initialSearchParams().get(AGE_QUERY_PARAM), [])
+  const initialAgeGroup = ageGroupFromSlug(initialUrlAge, AGE_GROUPS)
   const [metricsByKey, setMetricsByKey] = useState<Record<string, Record<string, number>>>({})
   const metricsLoadedRef = useRef<Set<string>>(new Set())
   const areaCacheRef = useRef<Map<string, AreaDetail>>(new Map())
@@ -63,8 +79,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [nameIndex, setNameIndex] = useState<Map<string, NameIndexEntry>>(new Map())
   const [manifest, setManifest] = useState<DataManifest | null>(null)
   const [selectedArea, setSelectedArea] = useState(NATIONAL_KEY)
-  const [selectedYear, setSelectedYear] = useState('2023')
-  const [selectedAgeGroup, setSelectedAgeGroup] = useState<AgeGroup>('Total - age')
+  const [selectedYear, setSelectedYear] = useState(initialUrlYear || '2023')
+  const [selectedAgeGroup, setSelectedAgeGroup] = useState<AgeGroup>(
+    initialAgeGroup || 'Total - age',
+  )
   const [selectedDetail, setSelectedDetail] = useState<AreaDetail | null>(null)
   const [nationalDetail, setNationalDetail] = useState<AreaDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -123,14 +141,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
         areaCacheRef.current.set(national.name, national)
         setSelectedDetail(national)
         setSelectedArea(man.nationalKey || NATIONAL_KEY)
-        if (man.years.length > 0) {
-          setSelectedYear(man.years[man.years.length - 1])
-        }
-        const year = man.years[man.years.length - 1] || '2023'
-        const rcMetrics = await loadMetrics('rc', year, 'Total - age')
+        const urlAgeGroup = ageGroupFromSlug(
+          initialUrlAge,
+          (man.ageGroups as AgeGroup[]) ?? AGE_GROUPS,
+        )
+        const year =
+          initialUrlYear && man.years.includes(initialUrlYear)
+            ? initialUrlYear
+            : man.years[man.years.length - 1] || '2023'
+        const ageGroup = urlAgeGroup || 'Total - age'
+        setSelectedYear(year)
+        setSelectedAgeGroup(ageGroup)
+        const rcMetrics = await loadMetrics('rc', year, ageGroup)
         if (cancelled) return
-        metricsLoadedRef.current.add(metricsKey('rc', year, 'Total - age'))
-        setMetricsByKey({ [metricsKey('rc', year, 'Total - age')]: rcMetrics })
+        metricsLoadedRef.current.add(metricsKey('rc', year, ageGroup))
+        setMetricsByKey({ [metricsKey('rc', year, ageGroup)]: rcMetrics })
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Failed to load data')
@@ -143,7 +168,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [initialUrlAge, initialUrlYear])
 
   // Reload metrics when year/age changes for active tiers
   useEffect(() => {
