@@ -42,6 +42,8 @@ const QUERY_RADIUS_METRES = 10000
 const MAX_CANDIDATES_PER_AREA = 12
 const SOURCE_CACHE_DIR = process.env.DATAFINDER_CACHE_DIR || '.cache/datafinder-boundaries'
 const GENERATED_TILE_CACHE_DIR = process.env.GENERATED_TILE_CACHE_DIR || '.cache/generated-tiles'
+const GENERATED_PMTILES_CACHE_DIR =
+  process.env.GENERATED_PMTILES_CACHE_DIR || '.cache/generated-pmtiles'
 const SIMPLIFY_TOLERANCE = {
   rc: 0.0022,
   ta: 0.0011,
@@ -120,9 +122,15 @@ function ringCentroid(points) {
 }
 
 async function collectCandidatePoints(tier) {
-  const sourcePath = `public/tiles/${tier}.pmtiles`
+  const sourcePath = `${GENERATED_PMTILES_CACHE_DIR}/${tier}.pmtiles`
   const archive = new PMTiles(fileSource(sourcePath))
-  const header = await archive.getHeader()
+  let header
+  try {
+    header = await archive.getHeader()
+  } catch (error) {
+    if (error?.code === 'ENOENT') return new Map()
+    throw error
+  }
   const zoom = Math.max(header.minZoom, Math.min(header.maxZoom, BORDER_ZOOMS[tier]))
   const maxTile = 2 ** zoom - 1
   const minX = Math.max(0, lonToTileX(header.minLon, zoom) - 1)

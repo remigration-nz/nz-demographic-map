@@ -1,4 +1,5 @@
 import fs from 'fs/promises'
+import { dirname } from 'path'
 import { gzipSync } from 'zlib'
 import { GeoJSONVT } from '@maplibre/geojson-vt'
 import { fromGeojsonVt } from '@maplibre/vt-pbf'
@@ -13,10 +14,12 @@ const TILE_TYPE = {
   MVT: 1,
 }
 const GENERATED_TILE_CACHE_DIR = process.env.GENERATED_TILE_CACHE_DIR || '.cache/generated-tiles'
+const GENERATED_PMTILES_CACHE_DIR =
+  process.env.GENERATED_PMTILES_CACHE_DIR || '.cache/generated-pmtiles'
 const TILESETS = {
   national: {
     input: `${GENERATED_TILE_CACHE_DIR}/national-fills.geojson`,
-    output: 'public/tiles/national.pmtiles',
+    output: `${GENERATED_PMTILES_CACHE_DIR}/national.pmtiles`,
     layer: 'national',
     nameProp: 'name',
     minZoom: 0,
@@ -24,7 +27,7 @@ const TILESETS = {
   },
   rc: {
     input: `${GENERATED_TILE_CACHE_DIR}/rc-fills.geojson`,
-    output: 'public/tiles/rc.pmtiles',
+    output: `${GENERATED_PMTILES_CACHE_DIR}/rc.pmtiles`,
     layer: 'rc',
     nameProp: 'REGC2025_1',
     minZoom: 0,
@@ -32,7 +35,7 @@ const TILESETS = {
   },
   ta: {
     input: `${GENERATED_TILE_CACHE_DIR}/ta-fills.geojson`,
-    output: 'public/tiles/ta.pmtiles',
+    output: `${GENERATED_PMTILES_CACHE_DIR}/ta.pmtiles`,
     layer: 'ta',
     nameProp: 'TA2025_V_1',
     minZoom: 0,
@@ -40,7 +43,7 @@ const TILESETS = {
   },
   sa2: {
     input: `${GENERATED_TILE_CACHE_DIR}/sa2-fills.geojson`,
-    output: 'public/tiles/sa2.pmtiles',
+    output: `${GENERATED_PMTILES_CACHE_DIR}/sa2.pmtiles`,
     layer: 'sa2',
     nameProp: 'SA22025__2',
     minZoom: 0,
@@ -284,6 +287,7 @@ async function buildTileset(name, config) {
     maxZoom: config.maxZoom,
   })
 
+  await fs.mkdir(dirname(config.output), { recursive: true })
   await fs.writeFile(
     config.output,
     Buffer.concat([header, rootDirectory, metadata, ...leafDirectories, ...tileBuffers]),
