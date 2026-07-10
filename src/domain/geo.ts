@@ -36,6 +36,8 @@ export function findRegionData(
   return null
 }
 
+import { SA2_ZOOM_THRESHOLD, TA_ZOOM_THRESHOLD } from './types'
+
 export function getEuropeanData(
   regionEntry: RegionEntry | null,
   year: string,
@@ -101,7 +103,7 @@ export function ageGroupSlug(ageGroup: string): string {
 }
 
 export function tierForZoom(zoom: number): 'rc' | 'ta' | 'sa2' {
-  if (zoom >= 11) return 'sa2'
-  if (zoom >= 8) return 'ta'
+  if (zoom >= SA2_ZOOM_THRESHOLD) return 'sa2'
+  if (zoom >= TA_ZOOM_THRESHOLD) return 'ta'
   return 'rc'
 }

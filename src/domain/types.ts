@@ -55,7 +55,7 @@ export const AGE_GROUPS: AgeGroup[] = [
 export const NATIONAL_KEY = 'Total - New Zealand by regional council'
 
 export const TA_ZOOM_THRESHOLD = 8
-export const SA2_ZOOM_THRESHOLD = 11
+export const SA2_ZOOM_THRESHOLD = 10.75
 
 export const CATEGORY_COLORS: Record<string, string> = {
   European: '#3b82f6',
