@@ -128,43 +128,49 @@ function AreaSearch({ onSelect, disabled = false }: AreaSearchProps) {
 
   return (
     <div className="area-search" ref={wrapRef}>
-      <input
-        ref={inputRef}
-        type="search"
-        className="area-search-input"
-        placeholder="Search place or suburb…"
-        value={query}
-        disabled={disabled || loadError}
-        autoComplete="off"
-        spellCheck={false}
-        onChange={(e) => {
-          setQuery(e.target.value)
-          setOpen(true)
-          setActive(0)
-        }}
-        onFocus={() => setOpen(true)}
-        onKeyDown={onKeyDown}
-        aria-label="Search places"
-      />
-      {open && query.trim().length >= 2 && (
-        <div className="area-search-results">
-          {results.length === 0 && (
-            <div className="area-search-empty">{index ? 'No matching places' : 'Loading…'}</div>
-          )}
-          {results.map((hit, i) => (
-            <button
-              key={`${hit.tier}-${hit.slug}`}
-              type="button"
-              className={`area-search-item ${i === active ? 'active' : ''}`}
-              onMouseEnter={() => setActive(i)}
-              onClick={() => pick(hit)}
-            >
-              <span className="area-search-name">{hit.name}</span>
-              <span className="area-search-tier">{TIER_LABEL[hit.tier] || hit.tier}</span>
-            </button>
-          ))}
-        </div>
-      )}
+      <a className="area-search-back" href="/" aria-label="Back to site home">
+        <span className="area-search-back-icon" aria-hidden="true" />
+        <span className="area-search-back-label">Back to site home</span>
+      </a>
+      <div className="area-search-main">
+        <input
+          ref={inputRef}
+          type="search"
+          className="area-search-input"
+          placeholder="Search place or suburb…"
+          value={query}
+          disabled={disabled || loadError}
+          autoComplete="off"
+          spellCheck={false}
+          onChange={(e) => {
+            setQuery(e.target.value)
+            setOpen(true)
+            setActive(0)
+          }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={onKeyDown}
+          aria-label="Search places"
+        />
+        {open && query.trim().length >= 2 && (
+          <div className="area-search-results">
+            {results.length === 0 && (
+              <div className="area-search-empty">{index ? 'No matching places' : 'Loading…'}</div>
+            )}
+            {results.map((hit, i) => (
+              <button
+                key={`${hit.tier}-${hit.slug}`}
+                type="button"
+                className={`area-search-item ${i === active ? 'active' : ''}`}
+                onMouseEnter={() => setActive(i)}
+                onClick={() => pick(hit)}
+              >
+                <span className="area-search-name">{hit.name}</span>
+                <span className="area-search-tier">{TIER_LABEL[hit.tier] || hit.tier}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
