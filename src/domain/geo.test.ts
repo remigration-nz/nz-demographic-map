@@ -70,9 +70,10 @@ describe('getEuropeanData', () => {
 describe('tierForZoom', () => {
   it('maps zoom thresholds', () => {
     expect(tierForZoom(5)).toBe('rc')
-    expect(tierForZoom(8)).toBe('ta')
-    expect(tierForZoom(10.74)).toBe('ta')
-    expect(tierForZoom(10.75)).toBe('sa2')
+    expect(tierForZoom(6.99)).toBe('rc')
+    expect(tierForZoom(7)).toBe('ta')
+    expect(tierForZoom(9.99)).toBe('ta')
+    expect(tierForZoom(10)).toBe('sa2')
   })
 })
 
