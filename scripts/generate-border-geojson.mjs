@@ -43,9 +43,9 @@ const MAX_CANDIDATES_PER_AREA = 12
 const SOURCE_CACHE_DIR = process.env.DATAFINDER_CACHE_DIR || '.cache/datafinder-boundaries'
 const GENERATED_TILE_CACHE_DIR = process.env.GENERATED_TILE_CACHE_DIR || '.cache/generated-tiles'
 const SIMPLIFY_TOLERANCE = {
-  rc: 0.002,
-  ta: 0.001,
-  sa2: 0.00015,
+  rc: 0.0022,
+  ta: 0.0011,
+  sa2: 0.00018,
 }
 
 function fileSource(file) {
@@ -144,7 +144,11 @@ async function collectCandidatePoints(tier) {
       for (let index = 0; index < layer.length; index++) {
         const feature = layer.feature(index)
         const geometry = feature.loadGeometry()
-        const name = feature.properties[candidateNameProp] || ''
+        const name =
+          feature.properties[candidateNameProp] ||
+          feature.properties[DATAFINDER_LAYERS[tier].outputNameProp] ||
+          feature.properties[DATAFINDER_LAYERS[tier].sourceOutputNameProp] ||
+          ''
 
         for (const ring of geometry) {
           const points = ring.map(point => tilePointToLonLat(point, tileX, tileY, zoom, feature.extent))
@@ -293,6 +297,38 @@ async function fetchSourceFeatures(tier, candidatesByName) {
     }
     return feature
   })
+
+  return features
+}
+
+async function readCachedSourceFeatures(tier) {
+  const layer = DATAFINDER_LAYERS[tier]
+  const cacheDir = `${SOURCE_CACHE_DIR}/${tier}`
+  let files
+  try {
+    files = await fs.readdir(cacheDir)
+  } catch (error) {
+    if (error?.code === 'ENOENT') return []
+    throw error
+  }
+
+  const features = []
+  for (const file of files) {
+    if (!file.endsWith('.json')) continue
+    const cachePath = `${cacheDir}/${file}`
+    try {
+      const cached = JSON.parse(await fs.readFile(cachePath, 'utf8'))
+      if (
+        cached.layerId === layer.id &&
+        cached.sourceNameProp === layer.sourceNameProp &&
+        cached.feature?.geometry
+      ) {
+        features.push(cached.feature)
+      }
+    } catch (error) {
+      console.warn(`Ignoring invalid source feature cache: ${cachePath}`)
+    }
+  }
 
   return features
 }
@@ -584,7 +620,14 @@ async function generateBorders(tier) {
   const candidatesByName = await collectCandidatePoints(tier)
   console.log(`${tier}: found ${candidatesByName.size.toLocaleString()} areas in PMTiles`)
 
-  const sourceFeatures = await fetchSourceFeatures(tier, candidatesByName)
+  const cachedSourceFeatures = await readCachedSourceFeatures(tier)
+  const sourceFeatures =
+    cachedSourceFeatures.length >= candidatesByName.size && cachedSourceFeatures.length > 0
+      ? cachedSourceFeatures
+      : await fetchSourceFeatures(tier, candidatesByName)
+  if (sourceFeatures === cachedSourceFeatures) {
+    console.log(`${tier}: loaded ${sourceFeatures.length.toLocaleString()} areas from local cache`)
+  }
   const segmentStats = buildSegmentStats(sourceFeatures)
   const sharedChainCache = new Map()
   const fillFeatures = sourceFeatures.map(feature =>
