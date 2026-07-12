@@ -24,6 +24,8 @@ const AGE_GROUPS = [
 ]
 
 const YEARS = ['2013', '2018', '2023']
+// Suppress percentages based on too few stated ethnicity responses to be meaningful.
+const MINIMUM_STATED_ETHNICITY_COUNT = 50
 
 function normalizeName(name) {
   if (!name) return ''
@@ -57,7 +59,7 @@ function lookupRegion(regionData, nameIndex, name) {
 function europeanPct(ageData) {
   if (!ageData) return null
   const total = ageData['Total stated - ethnicity']
-  if (typeof total !== 'number' || total <= 0) return null
+  if (typeof total !== 'number' || total < MINIMUM_STATED_ETHNICITY_COUNT) return null
   const european = ageData['European only'] || 0
   return Math.round((european / total) * 1000) / 10
 }
