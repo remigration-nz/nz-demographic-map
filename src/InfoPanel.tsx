@@ -12,7 +12,13 @@ import { useData, useSelectedRegionData } from './contexts/DataContext'
 import { useTheme } from './contexts/ThemeContext'
 import { describeArc, processUnifiedData } from './domain/ethnicity'
 import { ageGroupSlug } from './domain/geo'
-import { AGE_GROUPS, CATEGORY_COLORS, type DisplayItem, LEVEL3_KEY_MAP } from './domain/types'
+import {
+  AGE_GROUPS,
+  type AgeGroup,
+  CATEGORY_COLORS,
+  type DisplayItem,
+  LEVEL3_KEY_MAP,
+} from './domain/types'
 import { resolveIndexEntry } from './services/dataLoader'
 
 interface PieSlice {
@@ -139,14 +145,22 @@ function AgeBreakdown({
 }) {
   if (!yearData) return null
 
-  const rows = AGE_GROUPS.filter((ag) => ag !== 'Total - age')
-    .map((ag) => {
-      const total = yearData[ag]?.['Total stated - ethnicity'] || 0
-      const european = yearData[ag]?.['European only'] || 0
-      const pct = total > 0 ? (european / total) * 100 : 0
-      return { ag, total, pct }
-    })
-    .filter((r) => r.total > 0)
+  const rows = AGE_GROUPS.filter(
+    (ag): ag is Exclude<AgeGroup, 'Total - age'> => ag !== 'Total - age',
+  ).flatMap((ag) => {
+    const total = yearData[ag]?.['Total stated - ethnicity']
+    const european = yearData[ag]?.['European only']
+    if (
+      typeof total !== 'number' ||
+      total <= 0 ||
+      typeof european !== 'number' ||
+      !Number.isFinite(total) ||
+      !Number.isFinite(european)
+    ) {
+      return []
+    }
+    return [{ ag, pct: (european / total) * 100 }]
+  })
 
   if (rows.length === 0) return null
 
