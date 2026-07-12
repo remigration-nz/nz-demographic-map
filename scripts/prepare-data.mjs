@@ -157,14 +157,14 @@ function pickYears(entry) {
 
 async function main() {
   console.log('Loading source data...')
-  const assets = join(root, 'src', 'assets')
+  const generatedTiles = join(root, '.cache', 'generated-tiles')
   const [single, level3, dims, rcGeo, taGeo, sa2Geo] = await Promise.all([
     loadJson(join(publicData, 'statsnz_census_data.json')),
     loadJson(join(publicData, 'statsnz_census_data_level3.json')),
     loadJson(join(publicData, 'statsnz_dimensions.json')),
-    loadJson(join(assets, 'regional-councils.json')),
-    loadJson(join(assets, 'territorial-authorities.json')),
-    loadJson(join(assets, 'statistical-area-2.json')),
+    loadJson(join(generatedTiles, 'rc-fills.geojson')),
+    loadJson(join(generatedTiles, 'ta-fills.geojson')),
+    loadJson(join(generatedTiles, 'sa2-fills.geojson')),
   ])
 
   // Wipe previous prepared output subdirectories (keeps prepared/ root intact

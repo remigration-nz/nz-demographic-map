@@ -35,3 +35,4 @@ src/assets/**
 *.swp
 .idea
 .vscode
+.tags

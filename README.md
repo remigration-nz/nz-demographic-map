@@ -44,10 +44,11 @@ Prepared data and tiles under `public/` are committed so the app runs without a 
 Raw census dumps and source geometry are gitignored. To refresh:
 
 1. Copy `.env.example` → `.env` and set `STATSNZ_API_KEY` (never commit `.env`)
-2. `npm run data:fetch-all` and `npm run data:fetch-level3`
-3. Ensure GeoJSON exists under `src/assets/` (local only)
-4. `npm run data:prepare`
-5. Rebuild PMTiles if boundaries changed, then commit `public/data/prepared/` and `public/tiles/`
+2. `npm run data:structure`
+3. `npm run data:fetch-all` and `npm run data:fetch-level3`
+4. Ensure `.cache/generated-tiles/` contains the `rc`, `ta`, and `sa2` fill GeoJSON files
+5. `npm run data:prepare`
+6. Rebuild PMTiles if boundaries changed, then commit `public/data/prepared/`
 
 ## Data sources
 
