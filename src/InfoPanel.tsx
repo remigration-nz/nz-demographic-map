@@ -134,10 +134,8 @@ function EthnicityPie({ items, isDark }: { items: DisplayItem[]; isDark: boolean
 
 function AgeBreakdown({
   yearData,
-  isDark,
 }: {
   yearData: Record<string, Record<string, number>> | undefined
-  isDark: boolean
 }) {
   if (!yearData) return null
 
@@ -146,13 +144,11 @@ function AgeBreakdown({
       const total = yearData[ag]?.['Total stated - ethnicity'] || 0
       const european = yearData[ag]?.['European only'] || 0
       const pct = total > 0 ? (european / total) * 100 : 0
-      return { ag, total, european, pct }
+      return { ag, total, pct }
     })
     .filter((r) => r.total > 0)
 
   if (rows.length === 0) return null
-
-  const maxTotal = Math.max(...rows.map((r) => r.total))
 
   return (
     <div className="age-breakdown">
@@ -164,17 +160,12 @@ function AgeBreakdown({
           </span>
           <div className="age-bar-track">
             <div
-              className="age-bar-fill"
+              className="age-bar-euro"
               style={{
-                width: `${maxTotal > 0 ? (row.total / maxTotal) * 100 : 0}%`,
-                background: isDark ? '#4b5563' : '#d1d5db',
+                width: `${row.pct}%`,
+                background: '#3b82f6',
               }}
-            >
-              <div
-                className="age-bar-euro"
-                style={{ width: `${row.pct}%`, background: '#3b82f6' }}
-              />
-            </div>
+            />
           </div>
           <span className="age-bar-pct">{row.pct.toFixed(0)}%</span>
         </div>
@@ -497,9 +488,7 @@ function InfoPanel({ controls }: InfoPanelProps) {
 
       <EthnicityPie items={items} isDark={isDark} />
 
-      {selectedAgeGroup === 'Total - age' && (
-        <AgeBreakdown yearData={yearAllAges} isDark={isDark} />
-      )}
+      {selectedAgeGroup === 'Total - age' && <AgeBreakdown yearData={yearAllAges} />}
 
       {items.map((item) => (
         <div key={item.name}>

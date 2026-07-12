@@ -1022,15 +1022,10 @@ body {
   overflow: hidden;
 }
 
-.age-bar-fill {
-  height: 100%;
-  border-radius: 999px;
-  overflow: hidden;
-  min-width: 2px;
-}
-
 .age-bar-euro {
   height: 100%;
+  border-radius: 999px;
+  min-width: 2px;
 }
 
 .age-bar-pct {
