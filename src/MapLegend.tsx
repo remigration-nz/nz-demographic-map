@@ -26,7 +26,7 @@ function MapLegend() {
       </div>
       <div className="map-legend-row">
         <span className="map-legend-swatch" style={{ background: '#888' }} />
-        <span className="map-legend-note">No data</span>
+        <span className="map-legend-note">No data or sample &lt;50</span>
       </div>
     </div>
   )
