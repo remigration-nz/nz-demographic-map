@@ -527,11 +527,14 @@ function InfoPanel({ controls }: InfoPanelProps) {
           </div>
           {item.isExpandable &&
             expandedCategories.has(item.name) &&
-            (item.children ?? [])
-              .map((childName) => ({
+            (
+              item.breakdown ??
+              (item.children ?? []).map((childName) => ({
                 name: childName,
-                data: level3SelectedYearData?.[LEVEL3_KEY_MAP[childName] || childName] || 0,
+                value: level3SelectedYearData?.[LEVEL3_KEY_MAP[childName] || childName] || 0,
               }))
+            )
+              .map((child) => ({ name: child.name, data: child.value }))
               .sort((a, b) => b.data - a.data)
               .map((child) => {
                 const childPct = total > 0 ? ((child.data / total) * 100).toFixed(1) : '0.0'

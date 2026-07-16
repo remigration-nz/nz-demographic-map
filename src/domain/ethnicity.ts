@@ -1,12 +1,20 @@
 import { getValue } from './geo'
-import type { DisplayItem, EthnicityCounts } from './types'
+import type { DisplayChild, DisplayItem, EthnicityCounts } from './types'
 
 interface CategoryDef {
   name: string
   key: string | null
   isMelaa?: boolean
+  isOtherMixed?: boolean
   children: string[]
 }
+
+const OTHER_MIXED_BREAKDOWN = [
+  { name: 'European/Pacific Islander', key: 'European/Pacific Peoples' },
+  { name: 'Maori/Pacific Islander', key: 'Māori/Pacific Peoples' },
+  { name: 'European/Asian', key: 'European/Asian' },
+  { name: 'European/Maori/Pacific Islander', key: 'European/Māori/Pacific Peoples' },
+] as const
 
 const CATEGORIES: CategoryDef[] = [
   {
@@ -25,7 +33,7 @@ const CATEGORIES: CategoryDef[] = [
       'Other European',
     ],
   },
-  { name: 'European Maori', key: 'European/Māori', children: [] },
+  { name: 'European/Maori', key: 'European/Māori', children: [] },
   { name: 'Maori', key: 'Māori only', children: [] },
   {
     name: 'Pacific Islander',
@@ -54,7 +62,32 @@ const CATEGORIES: CategoryDef[] = [
     isMelaa: true,
     children: ['Middle Eastern', 'Latin American', 'African', 'Other Ethnicity'],
   },
+  {
+    name: 'Other Mixed',
+    key: null,
+    isOtherMixed: true,
+    children: OTHER_MIXED_BREAKDOWN.map((child) => child.name),
+  },
 ]
+
+function otherMixedValue(data: EthnicityCounts): number {
+  return Object.entries(data).reduce((sum, [name, value]) => {
+    const isMixedResponse =
+      name.includes('/') && name !== 'European/Māori' && !name.endsWith(' only')
+    return isMixedResponse && typeof value === 'number' && Number.isFinite(value)
+      ? sum + value
+      : sum
+  }, 0)
+}
+
+function otherMixedBreakdown(data: EthnicityCounts): DisplayChild[] {
+  const featured = OTHER_MIXED_BREAKDOWN.map(({ name, key }) => ({
+    name,
+    value: getValue(data, key),
+  }))
+  const remaining = otherMixedValue(data) - featured.reduce((sum, child) => sum + child.value, 0)
+  return [...featured, { name: 'Other Combinations', value: Math.max(0, remaining) }]
+}
 
 function categoryValue(data: EthnicityCounts, cat: CategoryDef): number {
   if (cat.isMelaa) {
@@ -62,6 +95,9 @@ function categoryValue(data: EthnicityCounts, cat: CategoryDef): number {
       getValue(data, 'Middle Eastern/Latin American/African only') +
       getValue(data, 'Other Ethnicity only')
     )
+  }
+  if (cat.isOtherMixed) {
+    return otherMixedValue(data)
   }
   if (cat.key) return getValue(data, cat.key)
   return 0
@@ -124,6 +160,7 @@ export function processUnifiedData(
       changeTooltip: change.tooltip,
       isExpandable: hasChildren,
       children: hasChildren ? category.children : undefined,
+      breakdown: category.isOtherMixed ? otherMixedBreakdown(detailedSingleData) : undefined,
     }
   })
 }

@@ -37,6 +37,12 @@ export interface DisplayItem {
   changeTooltip: string
   isExpandable: boolean
   children?: string[]
+  breakdown?: DisplayChild[]
+}
+
+export interface DisplayChild {
+  name: string
+  value: number
 }
 
 export interface EuropeanMetric {
@@ -59,11 +65,12 @@ export const SA2_ZOOM_THRESHOLD = 10
 
 export const CATEGORY_COLORS: Record<string, string> = {
   European: '#3b82f6',
-  'European Maori': '#8b5cf6',
+  'European/Maori': '#8b5cf6',
   Maori: '#ef4444',
   'Pacific Islander': '#f59e0b',
   Asian: '#10b981',
   'MELAA & Other': '#6b7280',
+  'Other Mixed': '#ec4899',
 }
 
 export const LEVEL3_KEY_MAP: Record<string, string> = {
@@ -83,7 +90,7 @@ export const LEVEL3_KEY_MAP: Record<string, string> = {
   Niuean: 'Niuean',
   Tokelauan: 'Tokelauan',
   Fijian: 'Fijian',
-  Other: 'Other Pacific Peoples',
+  Other: 'Other Pacific Islanders',
   Chinese: 'Chinese',
   Indian: 'Indian',
   Filipino: 'Filipino',
